@@ -50,7 +50,7 @@ export default function Menubar() {
               fontSize: '1.25rem'
             }}
           >
-            LOGO
+            로고
           </Typography>
 
           {/* 중앙: 네비게이션 메뉴 */}

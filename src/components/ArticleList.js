@@ -7,17 +7,16 @@ import {
   List,
   Card,
   CardContent,
-  ListItem,
   Avatar,
   Typography,
   MenuItem,
-  ListItemText,
 } from "@mui/material";
 import { useStore } from "../redux/store/store";
-
+import ImageIcon from '@mui/icons-material/Image';
 import ky from "ky";
 import { articlePath, modifyMode } from "../util/constant";
 import { useNavigate } from "react-router-dom";
+import { extractFirstImageUrl, hasImageMarkdown, truncateContentWithoutImages } from "../util/markdownUtils";
 
 const ArticleList = ({ posts, setPosts }) => {
   const { userId } = useStore();
@@ -27,6 +26,23 @@ const ArticleList = ({ posts, setPosts }) => {
 
   const navigator = useNavigate();
 
+  const formatDate = (dateString) => {
+    if (!dateString) return '날짜 없음';
+    
+    // ISO 문자열인지 확인
+    if (typeof dateString === 'string' && dateString.includes('T')) {
+      return new Date(dateString).toLocaleDateString();
+    }
+    
+    // 유닉스 타임스탬프인지 확인 (숫자인 경우)
+    if (!isNaN(dateString)) {
+      return new Date(Number(dateString)).toLocaleDateString();
+    }
+    
+    // 다른 형식의 날짜 문자열 시도
+    const date = new Date(dateString);
+    return !isNaN(date) ? date.toLocaleDateString() : '유효하지 않은 날짜';
+  };
   const handleClick = (e, articleNum) => {
     setAnchorEl(e.currentTarget);
     setSelectedArticleNum(articleNum);
@@ -84,7 +100,8 @@ const ArticleList = ({ posts, setPosts }) => {
   };
 
   const handleLike = async (e, post) => {
-    const articleNum = post.articleNum;
+    const articleId = post.articleId;
+    const token = localStorage.getItem('jtw');
 
     if (userId === null) {
       alert("로그인이 필요한 기능입니다.");
@@ -95,10 +112,11 @@ const ArticleList = ({ posts, setPosts }) => {
       const response = await ky.post(`${articlePath}/reaction/like`, {
         json: {
           userId,
-          articleNum,
+          articleId,
         },
         headers: {
           "Content-Type": "application/json",
+          // "Authorization": `Bearer ${token}`, // JWT 토큰 추가
         },
       });
 
@@ -106,7 +124,7 @@ const ArticleList = ({ posts, setPosts }) => {
         const updatedArticle = await response.json();
         await setPosts((prevPosts) =>
           prevPosts.map((post) =>
-            post.articleNum === articleNum
+            post.articleId === articleId
               ? {
                   ...post,
                   likeCount: updatedArticle.likeCount,
@@ -124,7 +142,7 @@ const ArticleList = ({ posts, setPosts }) => {
   };
 
   const handleHate = async (e, post) => {
-    const articleNum = post.articleNum;
+    const articleId = post.articleId;
 
     if (userId === null) {
       alert("로그인이 필요한 기능입니다.");
@@ -135,7 +153,7 @@ const ArticleList = ({ posts, setPosts }) => {
       const response = await ky.post(`${articlePath}/reaction/hate`, {
         json: {
           userId,
-          articleNum,
+          articleId,
         },
         headers: {
           "Content-Type": "application/json",
@@ -146,7 +164,7 @@ const ArticleList = ({ posts, setPosts }) => {
         const updatedArticle = await response.json();
         await setPosts((prevPosts) =>
           prevPosts.map((post) =>
-            post.articleNum === articleNum
+            post.articleId === articleId
               ? {
                   ...post,
                   likeCount: updatedArticle.likeCount,
@@ -180,9 +198,9 @@ const ArticleList = ({ posts, setPosts }) => {
     <Box sx={{ width: '100%', maxWidth: '800px' }}>
       {posts.length !== 0 && (
         <List sx={{ width: '100%', p: 0 }}>
-          {posts.map((post) => (
+          {posts.map((post, index) => (
             <Card
-              key={post.articleNum}
+              key={post.articleNum || index}
               elevation={0}
               sx={{
                 mb: 3,
@@ -266,20 +284,65 @@ const ArticleList = ({ posts, setPosts }) => {
                     }}
                   >
                     {post.articleTitle}
+                    {hasImageMarkdown(post.articleContent) && (
+                      <Box 
+                        component="span" 
+                        sx={{ 
+                          ml: 1,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          color: 'primary.main'
+                        }}
+                      >
+                          <ImageIcon fontSize="small" sx={{ mr: 0.5 }} />
+                      </Box>
+                    )}
                   </Typography>
-                  <Typography 
-                    variant="body2" 
-                    sx={{ 
-                      color: '#666',
-                      lineHeight: 1.6 
-                    }}
-                  >
-                    {post.articleContent.length > 100
-                      ? post.articleContent.substring(0, 100) + "..."
-                      : post.articleContent}
-                  </Typography>
+                  
+                    {/* 본문과 이미지 미리보기를 가로로 배치 */}
+                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start' }}>
+                      {/* 본문 텍스트 */}
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          color: '#666',
+                          lineHeight: 1.6,
+                          flex: 1
+                        }}
+                      >
+                        {truncateContentWithoutImages(post.articleContent, 100)}
+                      </Typography>
+
+                      {/* 이미지 미리보기 - 오른쪽에 배치 */}
+                      {hasImageMarkdown(post.articleContent) && (
+                        <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                          {extractFirstImageUrl(post.articleContent) && (
+                            <Box 
+                              sx={{ 
+                                width: 80, 
+                                height: 80, 
+                                borderRadius: 1,
+                                overflow: 'hidden',
+                                flexShrink: 0,  // 이미지 크기 유지
+                                border: '1px solid',
+                                borderColor: 'divider'
+                              }}
+                            >
+                              <img 
+                                src={extractFirstImageUrl(post.articleContent)} 
+                                alt="미리보기" 
+                                style={{ 
+                                  width: '100%', 
+                                  height: '100%', 
+                                  objectFit: 'cover' 
+                                }}
+                              />
+                            </Box>
+                          )}
+                        </Box>
+                      )}
+                  </Box>
                 </Box>
- 
                 {/* 메타 정보 */}
                 <Typography 
                   variant="body2" 
@@ -290,9 +353,8 @@ const ArticleList = ({ posts, setPosts }) => {
                     fontSize: '0.875rem'
                   }}
                 >
-                  {new Date(post.createdAt).toLocaleDateString()} • 조회 {post.viewCount}
+                  {formatDate(post.createdAt)} • 조회 {post.viewCount}
                 </Typography>
- 
                 {/* 액션 버튼 */}
                 <Box sx={{ 
                   display: 'flex',
