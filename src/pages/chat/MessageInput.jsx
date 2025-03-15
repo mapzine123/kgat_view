@@ -14,8 +14,6 @@ const MessageInput = ({roomId, onSendMessage}) => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
-
-        console.log('보낸 메시지 : ', message);
         if(!message.trim() || !roomId) {
             return;
         }
@@ -51,12 +49,6 @@ const MessageInput = ({roomId, onSendMessage}) => {
                     gap: 1
                 }}
             >
-                <IconButton size="small">
-                    <AttachFile />
-                </IconButton>
-                <IconButton size="small">
-                    <EmojiEmotionsIcon />
-                </IconButton>
                 <TextField
                     fullWidth
                     variant="outlined"

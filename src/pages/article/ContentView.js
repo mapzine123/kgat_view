@@ -15,26 +15,47 @@ import {
   IconButton,
   Menu,
   MenuItem,
+  Skeleton,
 } from "@mui/material";
 import ThumbUpIcon from "@mui/icons-material/ThumbUp";
 import ThumbDownIcon from "@mui/icons-material/ThumbDown";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import ky from "ky";
-import { useStore } from "../redux/store/store";
-import { commentPath, modifyMode } from "../util/constant";
+import ReactMarkdown from 'react-markdown';
+import rehypeRaw from 'rehype-raw';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { materialDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { useStore } from "../../redux/store/store";
+import { commentPath, modifyMode, userPath } from "../../util/constant";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import { formatDate } from "../../util/dateUtil";
+import ThumbUpOutlinedIcon from '@mui/icons-material/ThumbUpOutlined';
+import ThumbDownOutlinedIcon from '@mui/icons-material/ThumbDownOutlined';
+import { articlePath } from "../../util/constant";
 
 const ContentView = () => {
   const location = useLocation();
   const { post } = location.state || {};
   const { userId } = useStore();
 
+// 프로필 이미지 관리 상태 추가
+const [profileImages, setProfileImages] = useState({});
+const [loadingImages, setLoadingImages] = useState({});
+
+// 원본 댓글용 메뉴 관리 상태
+const [commentMenuAnchorEl, setCommentMenuAnchorEl] = useState(null);
+const [currentCommentId, setCurrentCommentId] = useState(null);
+const [currentPost, setCurrentPost] = useState(post || {});
+
+// 대댓글용 메뉴 관리 상태
+const [subCommentMenuAnchorEl, setSubCommentMenuAnchorEl] = useState(null);
+const [currentSubCommentId, setCurrentSubCommentId] = useState(null);
+
   const [commentText, setCommentText] = useState("");
   const [modifyText, setModifyText] = useState("");
   const [expandedComments, setExpandedComments] = useState({});
   const [anchorEl, setAnchorEl] = useState(null);
-  const [currentCommentId, setCurrentCommentId] = useState(null);
   const [comments, setComments] = useState([]);
   const [commentCount, setCommentCount] = useState(0);
   const [selectedCommentId, setSelectedCommentId] = useState("");
@@ -74,8 +95,32 @@ const ContentView = () => {
         }
       };
       fetchComments();
+          // 게시글 작성자 프로필 이미지 로드
+      fetchProfileImage(post.articleWriter || post.author);
     }
-  }, [commentCount]); // comment 수가 변경될 때마다 댓글을 다시 불러옴
+  }, [commentCount, post]);
+
+// 댓글 로드 후 모든 댓글 작성자의 프로필 이미지 로드
+useEffect(() => {
+  if (comments.length > 0) {
+    // 모든 댓글 작성자의 고유 ID 목록 추출
+    const userIds = new Set(comments.map(comment => comment.userId));
+    
+    // 각 작성자의 프로필 이미지 로드
+    userIds.forEach(commentUserId => {
+      fetchProfileImage(commentUserId);
+    });
+
+    // 대댓글 작성자 프로필 이미지도 로드
+    comments.forEach(comment => {
+      if (comment.subComments && comment.subComments.length > 0) {
+        comment.subComments.forEach(subComment => {
+          fetchProfileImage(subComment.userId);
+        });
+      }
+    });
+  }
+}, [comments]);
 
   if (!post) {
     return (
@@ -86,6 +131,102 @@ const ContentView = () => {
       </Container>
     );
   }
+
+// 게시글 좋아요 기능
+const handleArticleLike = async () => {
+  if (userId === null) {
+    alert("로그인이 필요한 기능입니다.");
+    return;
+  }
+
+  try {
+    const response = await ky.post(`${articlePath}/reaction/like`, {
+      json: {
+        userId,
+        articleId: currentPost.articleId,
+      },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": localStorage.getItem('jwt') ? `Bearer ${localStorage.getItem('jwt')}` : ''
+      },
+    });
+
+    if (response.ok) {
+      const updatedArticle = await response.json();
+      setCurrentPost(prev => ({
+        ...prev,
+        likeCount: updatedArticle.likeCount,
+        isLike: !prev.isLike,
+        isHate: false,
+        hateCount: updatedArticle.hateCount
+      }));
+    }
+  } catch (error) {
+    console.error("게시글 좋아요 처리 오류:", error);
+  }
+};
+
+// 게시글 싫어요 기능
+const handleArticleHate = async () => {
+  if (userId === null) {
+    alert("로그인이 필요한 기능입니다.");
+    return;
+  }
+
+  try {
+    const response = await ky.post(`${articlePath}/reaction/hate`, {
+      json: {
+        userId,
+        articleId: currentPost.articleId,
+      },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": localStorage.getItem('jwt') ? `Bearer ${localStorage.getItem('jwt')}` : ''
+      },
+    });
+
+    if (response.ok) {
+      const updatedArticle = await response.json();
+      setCurrentPost(prev => ({
+        ...prev,
+        likeCount: updatedArticle.likeCount,
+        isLike: false,
+        isHate: !prev.isHate,
+        hateCount: updatedArticle.hateCount
+      }));
+    }
+  } catch (error) {
+    console.error("게시글 싫어요 처리 오류:", error);
+  }
+};
+
+// 프로필 이미지 가져오는 함수 추가
+const fetchProfileImage = async (userIdToFetch) => {
+  // 이미 가져온 이미지거나 로딩 중이면 스킵
+  if (profileImages[userIdToFetch] || loadingImages[userIdToFetch]) {
+    return;
+  }
+
+  try {
+    setLoadingImages(prev => ({ ...prev, [userIdToFetch]: true }));
+    
+    const token = localStorage.getItem('jwt');
+    const response = await ky.get(`${userPath}/profile?userId=${userIdToFetch}`, {
+      headers: token ? {
+        "Authorization": `Bearer ${token}`
+      } : {},
+      credentials: 'include'
+    }).json();
+    
+    if (response && response.imageUrl) {
+      setProfileImages(prev => ({ ...prev, [userIdToFetch]: response.imageUrl }));
+    }
+  } catch (error) {
+    console.error(`프로필 이미지 로드 실패 (${userIdToFetch}):`, error);
+  } finally {
+    setLoadingImages(prev => ({ ...prev, [userIdToFetch]: false }));
+  }
+};
 
   const handleLike = async (commentId) => {
     if (userId === null) {
@@ -200,14 +341,30 @@ const ContentView = () => {
     }));
   };
 
-  const handleClick = (event, commentId) => {
-    setAnchorEl(event.currentTarget);
+  // 원본 댓글 메뉴 열기
+  const handleCommentMenuClick = (event, commentId) => {
+    setCommentMenuAnchorEl(event.currentTarget);
     setCurrentCommentId(commentId);
   };
 
-  const handleClose = () => {
-    setAnchorEl(null);
+  // 원본 댓글 메뉴 닫기
+  const handleCommentMenuClose = () => {
+    setCommentMenuAnchorEl(null);
     setCurrentCommentId(null);
+  };
+
+  // 대댓글 메뉴 열기
+  const handleSubCommentMenuClick = (event, subCommentId, parentCommentId) => {
+    setSubCommentMenuAnchorEl(event.currentTarget);
+    setCurrentSubCommentId(subCommentId);
+    // 부모 댓글 ID도 저장 (대댓글 삭제시 필요)
+    setCurrentCommentId(parentCommentId);
+  };
+
+  // 대댓글 메뉴 닫기
+  const handleSubCommentMenuClose = () => {
+    setSubCommentMenuAnchorEl(null);
+    setCurrentSubCommentId(null);
   };
 
   const handleModify = (e, commentId) => {
@@ -216,8 +373,14 @@ const ContentView = () => {
     handleClose();
   };
 
-  const handleDelete = async (e, commentId) => {
-    // 삭제 로직
+  const handleClose = () => {
+    setAnchorEl(null);
+    setCurrentCommentId(null);
+  };
+
+  // 원본 댓글 삭제 핸들러
+  const handleCommentDelete = async (commentId) => {
+    console.log("handleDelete 실행");
     try {
       const response = await ky.delete(`${commentPath}/${commentId}`, {
         headers: {
@@ -228,12 +391,11 @@ const ContentView = () => {
       if (response.ok) {
         setComments((prevComments) =>
           prevComments.filter(
-            (comment) => comment.commentId !== selectedCommentId
+            (comment) => comment.commentId !== commentId
           )
         );
-
         setCommentCount((prevCount) => prevCount - 1);
-        handleClose();
+        handleCommentMenuClose();
       } else {
         alert("댓글 삭제에 실패했습니다.");
       }
@@ -467,7 +629,8 @@ const ContentView = () => {
   };
 
   // 메뉴 기능
-  const handleMenuOpen = (event) => {
+  const handleMenuOpen = (event, subCommentId) => {
+    setCurrentCommentId(subCommentId);
     setAnchorEl(event.currentTarget);
   };
 
@@ -558,30 +721,135 @@ const ContentView = () => {
     }
   }
 
+// 프로필 이미지 표시 컴포넌트
+const ProfileAvatar = ({ userId, size = 'medium' }) => {
+  const isLoading = loadingImages[userId];
+  const imageUrl = profileImages[userId];
+  
+  const sizeProps = {
+    small: { width: 36, height: 36 },
+    medium: { width: 48, height: 48 },
+    large: { width: 64, height: 64 }
+  };
+  
+  // 스케일에 따라 아바타 크기 조정
+  const avatarSize = sizeProps[size] || sizeProps.medium;
+  
+  if (isLoading) {
+    return <Skeleton variant="circular" {...avatarSize} />;
+  }
+  
   return (
-    <Container maxWidth="xl" style={{ marginTop: "2rem" }}>
-      <Grid container spacing={3}>
-        {/* Left side: Article content */}
-        <Grid item xs={12} md={7} lg={8}>
-          <Card style={{ minHeight: "30vh" }}>
-            <CardContent>
-              <Typography variant="h4" component="h1" gutterBottom>
-                {post.articleTitle}
-              </Typography>
-              <Typography
-                variant="subtitle1"
-                color="textSecondary"
-                gutterBottom
-              >
-                작성자: {post.author} | 작성일:{" "}
-                {new Date(post.createdAt).toLocaleDateString()}
-              </Typography>
-              <Typography variant="body1" style={{ marginTop: "1rem" }}>
-                {post.articleContent}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
+    <Avatar
+      alt={userId}
+      src={imageUrl}
+      sx={{
+        ...avatarSize,
+        bgcolor: !imageUrl ? 'primary.main' : undefined,
+      }}
+    >
+      {!imageUrl && userId ? userId.charAt(0).toUpperCase() : ''}
+    </Avatar>
+  );
+};
+
+return (
+  <Container maxWidth="xl" style={{ marginTop: "2rem" }}>
+    <Grid container spacing={3}>
+      {/* Left side: Article content */}
+      <Grid item xs={12} md={7} lg={8}>
+        {/* 게시글 헤더 (제목, 작성자 정보) */}
+        <Box display="flex" alignItems="center" mb={2}>
+          <ProfileAvatar userId={currentPost.articleWriter || currentPost.author} size="large" />
+          <Box ml={2} flex={1}>
+            <Typography variant="h5" component="h1" gutterBottom>
+              {currentPost.articleTitle}
+            </Typography>
+            <Typography variant="subtitle2" color="text.secondary">
+              {currentPost.articleWriter || currentPost.author} • {formatDate(currentPost.createdAt)}
+            </Typography>
+          </Box>
+          
+          {/* 게시글 좋아요/싫어요 버튼 - 우측 정렬 */}
+          <Box display="flex" alignItems="center">
+            <Button
+              startIcon={currentPost.isLike ? <ThumbUpIcon color="primary" /> : <ThumbUpOutlinedIcon />}
+              onClick={handleArticleLike}
+              size="small"
+              sx={{ 
+                minWidth: 'auto', 
+                textTransform: 'none',
+                color: currentPost.isLike ? 'primary.main' : 'text.secondary'
+              }}
+            >
+              {currentPost.likeCount || 0}
+            </Button>
+
+            <Button
+              startIcon={currentPost.isHate ? <ThumbDownIcon color="error" /> : <ThumbDownOutlinedIcon />}
+              onClick={handleArticleHate}
+              size="small"
+              sx={{ 
+                minWidth: 'auto', 
+                textTransform: 'none',
+                color: currentPost.isHate ? 'error.main' : 'text.secondary',
+                ml: 1
+              }}
+            >
+              {currentPost.hateCount || 0}
+            </Button>
+            
+            <Typography 
+              variant="body2" 
+              color="text.secondary"
+              sx={{ ml: 2 }}
+            >
+              조회 {currentPost.viewCount || 0}
+            </Typography>
+          </Box>
+        </Box>
+
+        {/* 게시글 본문 */}
+        <Card variant="outlined" sx={{ mt: 2 }}>
+          <CardContent>
+            <ReactMarkdown 
+              components={{
+                code({node, inline, className, children, ...props}) {
+                  const match = /language-(\w+)/.exec(className || '');
+                  return !inline && match ? (
+                    <SyntaxHighlighter
+                      style={materialDark}
+                      language={match[1]}
+                      PreTag="div"
+                      {...props}
+                    >
+                      {String(children).replace(/\n$/, '')}
+                    </SyntaxHighlighter>
+                  ) : (
+                    <code className={className} {...props}>
+                      {children}
+                    </code>
+                  );
+                },
+                img: (imgProps) => (
+                  <img 
+                    {...imgProps} 
+                    style={{ 
+                      maxWidth: '100%', 
+                      height: 'auto', 
+                      borderRadius: '4px',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.1)' 
+                    }} 
+                  />
+                )
+              }}
+              rehypePlugins={[rehypeRaw]}
+            >
+              {post.articleContent}
+            </ReactMarkdown>
+          </CardContent>
+        </Card>
+      </Grid>
 
         {/* Right side: Comments */}
         <Grid item xs={12} md={5} lg={4}>
@@ -617,16 +885,10 @@ const ContentView = () => {
                     display="flex"
                     alignItems="flex-start"
                   >
-                    {/* 아바타 */}
-                    <Avatar
-                      alt={comment.author}
-                      src="/static/images/avatar/1.jpg"
-                      style={{
-                        marginRight: "16px",
-                        width: "64px",
-                        height: "64px",
-                      }}
-                    />
+                    {/* 프로필 아바타 */}
+                    <Box mr={2}>
+                      <ProfileAvatar userId={comment.userId} size="medium" />
+                    </Box>
 
                     {/* 댓글 내용 */}
                     <Box flexGrow={1}>
@@ -706,18 +968,15 @@ const ContentView = () => {
                             setReplyComment(comment.commentId); // 상태 업데이트
                           }}
                           sx={{
-                            color: "white",
+                            color: "primary",
                             borderRadius: "16px",
-                            "&:hover": {
-                              backgroundColor: "grey.700",
-                            },
                           }}
                         >
-                          답글
+                          댓글
                         </Button>
                         <IconButton
                           edge="end"
-                          onClick={(e) => handleClick(e, comment.commentId)}
+                          onClick={(e) => handleCommentMenuClick(e, comment.commentId)}
                           size="small"
                           style={{ marginLeft: "auto" }}
                         >
@@ -725,14 +984,11 @@ const ContentView = () => {
                         </IconButton>
 
                         <Menu
-                          anchorEl={anchorEl}
-                          open={
-                            Boolean(anchorEl) &&
-                            currentCommentId === comment.commentId
-                          }
-                          onClose={handleClose}
+                          anchorEl={commentMenuAnchorEl}
+                          open={Boolean(commentMenuAnchorEl) && currentCommentId === comment.commentId}
+                          onClose={handleCommentMenuClose}
                           MenuListProps={{
-                            "aria-labelledby": "basic-button",
+                            "aria-labelledby": "comment-menu-button",
                           }}
                         >
                           {userId === comment.userId ? (
@@ -747,9 +1003,7 @@ const ContentView = () => {
                               </MenuItem>,
                               <MenuItem
                                 key="delete"
-                                onClick={(e) =>
-                                  handleDelete(e, comment.commentId)
-                                }
+                                onClick={() => handleCommentDelete(currentCommentId)}
                               >
                                 삭제
                               </MenuItem>,
@@ -853,15 +1107,9 @@ const ContentView = () => {
                                     {subComment.subCommentId !==
                                     modifyedSubCommentId ? (
                                       <Box display="flex">
-                                        <Avatar
-                                          alt={subComment.userId}
-                                          src="/static/images/avatar/2.jpg"
-                                          style={{
-                                            marginRight: "16px",
-                                            width: "48px",
-                                            height: "48px",
-                                          }}
-                                        />
+                                        <Box mr={2}>
+                                          <ProfileAvatar userId={subComment.userId} size="small" />
+                                        </Box>
                                         <Box flexGrow={1}>
                                           <Typography
                                             variant="body2"
@@ -923,44 +1171,37 @@ const ContentView = () => {
                                               {subComment.hateCount}
                                             </Typography>
                                             <Box>
-                                              <IconButton
-                                                aria-label="대댓글 옵션"
-                                                aria-controls={`subcomment-menu-${subComment.subCommentId}`}
-                                                aria-haspopup="true"
-                                                onClick={(event) =>
-                                                  handleMenuOpen(
-                                                    event,
-                                                    subComment.subCommentId
-                                                  )
-                                                }
-                                                size="small"
-                                              >
+                                            <IconButton
+                                              aria-label="대댓글 옵션"
+                                              aria-controls={`subcomment-menu-${subComment.subCommentId}`}
+                                              aria-haspopup="true"
+                                              onClick={(event) => handleSubCommentMenuClick(
+                                                event, 
+                                                subComment.subCommentId,
+                                                comment.commentId  // 부모 댓글 ID도 전달
+                                              )}
+                                              size="small"
+                                            >
                                                 <MoreVertIcon />
                                               </IconButton>
                                               <Menu
-                                                anchorEl={anchorEl}
-                                                open={Boolean(anchorEl)}
-                                                onClose={handleMenuClose}
+                                                anchorEl={subCommentMenuAnchorEl}
+                                                open={Boolean(subCommentMenuAnchorEl) && currentSubCommentId === subComment.subCommentId}
+                                                onClose={handleSubCommentMenuClose}
                                               >
                                                 {userId ===
                                                 subComment.userId ? (
                                                   <Box>
                                                     <MenuItem
-                                                      onClick={() =>
-                                                        clickSubCommentModify(
-                                                          subComment.subCommentId
-                                                        )
-                                                      }
+                                                      onClick={() => clickSubCommentModify(subComment.subCommentId)}
                                                     >
                                                       수정
                                                     </MenuItem>
                                                     <MenuItem
-                                                      onClick={() =>
-                                                        handleSubCommentDelete(
-                                                          comment.commentId,
-                                                          subComment.subCommentId
-                                                        )
-                                                      }
+                                                      onClick={() => handleSubCommentDelete(
+                                                        currentCommentId,  // 저장된 부모 댓글 ID
+                                                        currentSubCommentId  // 현재 대댓글 ID
+                                                      )}
                                                     >
                                                       삭제
                                                     </MenuItem>

@@ -34,8 +34,6 @@ const Login = () => {
       const token = data.token;
       const userData = data.user;
 
-      console.dir(userData);
-
       localStorage.setItem("jwt", token);
       
       // zustand 상태에 사용자 정보 저장
@@ -44,8 +42,7 @@ const Login = () => {
       setAuthenticated(true);
       setUserImagePath(userData.profileImagePath);
 
-      console.log(userId)
-      
+      sessionStorage.setItem("userId", JSON.stringify(userData.id));
 
       // 로그인 성공 시 index.js로 이동
       navigate("/");

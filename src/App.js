@@ -5,14 +5,13 @@ import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
 import Signup from "./pages/Signup";
 import Menubar from "./components/Menubar";
 import { createTheme, CssBaseline, Snackbar, ThemeProvider } from "@mui/material";
-import WriteArticle from "./pages/WriteArticle";
-import MyPage from "./pages/MyPage";
 import { usePersistedStore, useStore } from "./redux/store/store";
-import ContentView from "./pages/ContentView";
-import TodoList from "./pages/TodoList";
-import ChatMain from "./pages/ChatMain";
 import { SnackbarProvider } from "notistack";
-import { useEffect } from "react";
+import WriteArticle from "./pages/article/WriteArticle";
+import ContentView from "./pages/article/ContentView";
+import ChatMain from "./pages/chat/ChatMain";
+import ToDoList from "./pages/todoList/TodoList";
+import MyPage from "./pages/myPage/MyPage";
 
 const lightTheme = createTheme({
  palette: {
@@ -90,7 +89,7 @@ function App() {
           <Route path="/write" element={<WriteArticle />} />
           <Route path="/myPage" element={<MyPage />} />
           <Route path="/contentView" element={<ContentView />} />
-          <Route path="/todoList" element={<TodoList />} />
+          <Route path="/todoList" element={<ToDoList />} />
           <Route path="/chat" element={<ChatMain />} />
         </Routes>
       </Router>

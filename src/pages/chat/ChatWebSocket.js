@@ -26,10 +26,14 @@ class ChatWebSocket {
         }
 
         this.socket.onmessage = (event) => {
-            console.log('메시지 수신:', event.data);
             try {
                 const message = JSON.parse(event.data);
-                console.log('파싱된 메시지:', message);
+                
+                // 필터링: silent 플래그가 있는 ENTER 메시지는 클라이언트에서 처리하지 않음
+                if (message.type === 'ENTER' && message.isMember === true) {
+                    return;
+                }
+                
                 this.messageHandlers.forEach(handler => handler(message));
             } catch(error) {
                 console.error('메시지 파싱 에러: ', error);
@@ -38,7 +42,7 @@ class ChatWebSocket {
     }
 
     onOpen(handler) {
-        this.openHandlers.add(handler);  // 올바른 철자
+        this.openHandlers.add(handler);
 
         if(this.socket?.readyState === WebSocket.OPEN) {
             handler();
@@ -51,14 +55,14 @@ class ChatWebSocket {
         return () => this.closeHandlers.delete(handler);
     }
 
-    enterRoom(roomId, userId) {
-        if(this.socket?.readyState === WebSocket.OPEN) {
+    enterRoom(roomId, userId, isMember) {
+        if(this.socket?.readyState === WebSocket.OPEN && !isMember) {
             this.socket.send(JSON.stringify({
                 type: 'ENTER',
                 roomId: roomId,
-                sender: userId,
+                senderId: userId,
                 message: '',
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
             }));
         }
     }
@@ -69,14 +73,12 @@ class ChatWebSocket {
                 const message = {
                     type: 'TALK',
                     roomId,
-                    sender: JSON.parse(atob(this.userId.split('.')[1])).sub,
+                    senderId: JSON.parse(atob(this.userId.split('.')[1])).sub,
                     content,
                     timestamp: new Date().toISOString()
                 };
     
-                console.log('전송할 메시지: ', message);
                 this.socket.send(JSON.stringify(message));
-                console.log('메시지 전송 완료');
     
                 return true;
             }

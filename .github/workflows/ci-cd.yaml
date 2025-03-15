@@ -19,6 +19,7 @@ jobs:
       - name: Build React App
         env:
           CI: false
+          REACT_APP_API_URL: "http://13.125.207.143:31572/api"
         run: |
           npm ci
           npm run build
